@@ -274,7 +274,7 @@ export const translations = {
       questions: "câu hỏi",
 
       // Card content
-      tests: "Bài thi",
+      tests: "Lượt thi",
       questionsLabel: "Câu hỏi",
       minutes: "Phút",
       exam: "Kỳ thi",
@@ -853,7 +853,7 @@ export const translations = {
       questions: "questions",
 
       // Card content
-      tests: "Tests",
+      tests: "Number of Exam attempts",
       questionsLabel: "Questions",
       minutes: "Minutes",
       exam: "Exam",

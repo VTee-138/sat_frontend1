@@ -3,7 +3,7 @@ import { del, get, post, put } from "../common/apiClient";
 const FolderQuestionService = {
   // Lấy danh sách thư mục câu hỏi
   getFolderQuestions: async (page = 1, limit = 20) => {
-    return await get(`/folder-question?page=${page}&limit=${limit}`);
+    return await get(`/folder-question?page=${page}&limit=all`);
   },
 
   // Lấy thông tin chi tiết thư mục câu hỏi

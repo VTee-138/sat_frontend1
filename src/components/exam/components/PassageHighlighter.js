@@ -1,4 +1,10 @@
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useMemo,
+  useCallback,
+} from "react";
 import {
   Box,
   Button,
@@ -29,23 +35,77 @@ import { decryptData } from "../../../common/decryption";
 import VocabularyService from "../../../services/VocabularyService";
 import MathRenderer from "../../../common/MathRenderer";
 
-export default function PassageHighlighter({ passage, passageKey, subject }) {
+export default function PassageHighlighter({
+  passage,
+  passageKey,
+  subject,
+  currentSubject,
+  currentModule,
+  examId,
+}) {
   const { t } = useLanguage();
 
-  const [highlighted, setHighlighted] = useState(() => {
-    const saved = localStorage.getItem("highlighted_passage_" + passageKey);
+  // ✅ Create unique storage key based on subject, module, exam and question
+  const createStorageKey = useCallback(
+    (questionIndex) => {
+      const subjectKey = currentSubject || subject || "UNKNOWN";
+      const moduleKey = currentModule || "MODULE1";
+      const examKey = examId || "default";
+      return `highlighted_${subjectKey}_${moduleKey}_${examKey}_Q${questionIndex}`;
+    },
+    [currentSubject, subject, currentModule, examId]
+  );
+
+  const [highlighted, setHighlighted] = useState([]);
+
+  // ✅ Load initial highlights when component mounts or keys change
+  useEffect(() => {
+    const storageKey = createStorageKey(passageKey);
+    let saved = localStorage.getItem(storageKey);
+
+    // ✅ Migration: Try old format if new format not found
+    if (!saved) {
+      const oldKey = "highlighted_passage_" + passageKey;
+      const oldSaved = localStorage.getItem(oldKey);
+      if (oldSaved) {
+        console.log(
+          "🔄 Migrating highlights from old format:",
+          oldKey,
+          "→",
+          storageKey
+        );
+        saved = oldSaved;
+        // Save to new format and remove old
+        localStorage.setItem(storageKey, saved);
+        localStorage.removeItem(oldKey);
+      }
+    }
+
+    console.log("🔍 Loading highlights with key:", storageKey);
+    console.log("📋 Storage key breakdown:", {
+      subject: currentSubject || subject,
+      module: currentModule,
+      examId: examId,
+      question: passageKey,
+    });
+
     if (saved) {
       const parsed = JSON.parse(saved);
-      // Ensure backward compatibility - add isVocabulary field if missing
-      return parsed.map((item) => ({
-        ...item,
-        text: item.text ? item.text.trim() : "",
-        isVocabulary: item.isVocabulary || item.note === "Vocabulary",
-        note: item.note === "Vocabulary" ? null : item.note, // Convert old vocabulary format
-      }));
+      console.log("✅ Found highlights:", parsed.length, "items");
+      setHighlighted(
+        parsed.map((item) => ({
+          ...item,
+          text: item.text ? item.text.trim() : "",
+          isVocabulary: item.isVocabulary || item.note === "Vocabulary",
+          note: item.note === "Vocabulary" ? null : item.note,
+        }))
+      );
+    } else {
+      console.log("🆕 No highlights found, starting fresh");
+      setHighlighted([]);
     }
-    return [];
-  });
+  }, [createStorageKey, passageKey]);
+
   const [notePopup, setNotePopup] = useState({
     open: false,
     anchor: null,
@@ -84,29 +144,22 @@ export default function PassageHighlighter({ passage, passageKey, subject }) {
 
   // Save highlight/note to localStorage when changed
   useEffect(() => {
-    localStorage.setItem(
-      "highlighted_passage_" + passageKey,
-      JSON.stringify(highlighted)
+    const storageKey = createStorageKey(passageKey);
+    localStorage.setItem(storageKey, JSON.stringify(highlighted));
+    console.log(
+      "💾 Saved highlights to:",
+      storageKey,
+      highlighted.length,
+      "items"
     );
-  }, [highlighted, passageKey]);
-  // Khi chuyển câu hỏi, load lại highlight
-  useEffect(() => {
-    const saved = localStorage.getItem("highlighted_passage_" + passageKey);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      // Ensure backward compatibility - add isVocabulary field if missing
-      setHighlighted(
-        parsed.map((item) => ({
-          ...item,
-          text: item.text ? item.text.trim() : "",
-          isVocabulary: item.isVocabulary || item.note === "Vocabulary",
-          note: item.note === "Vocabulary" ? null : item.note, // Convert old vocabulary format
-        }))
-      );
-    } else {
-      setHighlighted([]);
-    }
-  }, [passageKey]);
+  }, [
+    highlighted,
+    passageKey,
+    currentSubject,
+    currentModule,
+    examId,
+    createStorageKey,
+  ]);
 
   // Ẩn popup khi click ra ngoài
   useEffect(() => {
@@ -166,9 +219,10 @@ export default function PassageHighlighter({ passage, passageKey, subject }) {
 
     if (passageRef.current) {
       passageRef.current.addEventListener("click", handleHighlightClick);
+      const currentPassageRef = passageRef.current;
       return () => {
-        if (passageRef.current) {
-          passageRef.current.removeEventListener("click", handleHighlightClick);
+        if (currentPassageRef) {
+          currentPassageRef.removeEventListener("click", handleHighlightClick);
         }
       };
     }
@@ -207,11 +261,16 @@ export default function PassageHighlighter({ passage, passageKey, subject }) {
 
       const rect = range.getBoundingClientRect();
 
+      // ✅ Calculate position info để highlight chính xác
+      const positionInfo = calculatePositionInfo(range);
+      console.log("🎯 CALCULATED POSITION INFO:", positionInfo);
+
       // Lưu selection data và tạo temporary highlight
       setTempHighlight({
         text: selectedText.trim(),
         color: "#ffeb3b", // Màu vàng nhạt cho temp highlight
         isTemp: true,
+        positionInfo, // Store position info
       });
 
       setNotePopup({
@@ -222,6 +281,12 @@ export default function PassageHighlighter({ passage, passageKey, subject }) {
         },
         text: selectedText.trim(),
         range,
+        positionInfo, // Store position info in popup
+      });
+
+      console.log("🔥 TEMP HIGHLIGHT CREATED:", {
+        text: selectedText.trim(),
+        positionInfo,
       });
     }, 0);
   };
@@ -253,12 +318,67 @@ export default function PassageHighlighter({ passage, passageKey, subject }) {
     }
   };
 
+  // ✅ Calculate position info để identify chính xác instance được highlight
+  const calculatePositionInfo = (range) => {
+    try {
+      if (!passageRef.current || !range) return null;
+
+      const passageElement = passageRef.current;
+      const fullText =
+        passageElement.textContent || passageElement.innerText || "";
+      const selectedText = range.toString().trim();
+
+      // Get text before selection để tính position
+      const beforeRange = document.createRange();
+      beforeRange.setStart(passageElement.firstChild || passageElement, 0);
+      beforeRange.setEnd(range.startContainer, range.startOffset);
+      const textBefore = beforeRange.toString();
+
+      // Calculate position và context
+      const startOffset = textBefore.length;
+      const endOffset = startOffset + selectedText.length;
+
+      // Get surrounding context (30 chars before/after)
+      const contextBefore = textBefore.slice(-30);
+      const contextAfter = fullText.slice(endOffset, endOffset + 30);
+
+      return {
+        startOffset,
+        endOffset,
+        contextBefore,
+        contextAfter,
+        selectedText,
+      };
+    } catch (error) {
+      console.error("Error calculating position info:", error);
+      return null;
+    }
+  };
+
   // Thêm highlight
   const handleHighlight = (color) => {
     if (!notePopup.range) return;
+
+    // ✅ Use position info từ notePopup hoặc tempHighlight
+    const positionInfo = notePopup.positionInfo || tempHighlight?.positionInfo;
+
+    console.log("🎨 HANDLE HIGHLIGHT:", {
+      text: notePopup.text.trim(),
+      color,
+      positionInfo,
+      tempHighlight: tempHighlight?.positionInfo,
+      notePopupInfo: notePopup.positionInfo,
+    });
+
     setHighlighted((prev) => [
       ...prev,
-      { text: notePopup.text.trim(), color, note: null, isVocabulary: false },
+      {
+        text: notePopup.text.trim(),
+        color,
+        note: null,
+        isVocabulary: false,
+        positionInfo, // Store position info
+      },
     ]);
     setNotePopup({ open: false, anchor: null, text: "", range: null });
     setNoteEditPopup({ open: false, anchor: null });
@@ -431,7 +551,9 @@ export default function PassageHighlighter({ passage, passageKey, subject }) {
 
       // Kiểm tra xem có phải từ text đã highlight hay text mới
       if (folderModal.selectedRange) {
-        // Text mới - tạo highlight mới
+        // Text mới - tạo highlight mới với position info
+        const positionInfo =
+          notePopup.positionInfo || tempHighlight?.positionInfo;
         setHighlighted((prev) => [
           ...prev,
           {
@@ -439,6 +561,7 @@ export default function PassageHighlighter({ passage, passageKey, subject }) {
             color: "#e1f5fe",
             note: null,
             isVocabulary: true,
+            positionInfo, // Store position info
           },
         ]);
       } else if (folderModal.editIndex !== undefined) {
@@ -458,6 +581,9 @@ export default function PassageHighlighter({ passage, passageKey, subject }) {
     }
   };
   const handleSaveNote = () => {
+    // ✅ Use position info từ notePopup hoặc tempHighlight
+    const positionInfo = notePopup.positionInfo || tempHighlight?.positionInfo;
+
     setHighlighted((prev) => [
       ...prev,
       {
@@ -465,6 +591,7 @@ export default function PassageHighlighter({ passage, passageKey, subject }) {
         color: "#ffe082",
         note: noteInput.trim(),
         isVocabulary: false,
+        positionInfo, // Store position info
       },
     ]);
     setNotePopup({
@@ -582,82 +709,212 @@ export default function PassageHighlighter({ passage, passageKey, subject }) {
   //   );
   // };
 
-  function removeHTMLTags(input) {
-    return input.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ");
-  }
+  // ✅ Smart highlight method với position-aware highlighting
+  const processSmartHighlight = useCallback(
+    (htmlContent, highlights, permanentHighlights) => {
+      console.log(
+        "🔥 PROCESSING SMART HIGHLIGHT:",
+        highlights.length,
+        "highlights"
+      );
 
-  // ✅ Fallback simple highlight method (original regex approach)
-  const processSimpleHighlight = (
-    htmlContent,
-    highlights,
-    permanentHighlights
-  ) => {
-    let processedContent = htmlContent;
+      // ✅ DOM-based highlighting thay vì regex replacement
+      const tempDiv = document.createElement("div");
+      tempDiv.innerHTML = htmlContent;
 
-    highlights.forEach((h) => {
-      const highlightText = h.text.trim();
-      const escapedText = highlightText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const regex = new RegExp(`(?!<[^>]*)(${escapedText})(?![^<]*>)`, "gi");
+      // Sort highlights by position để apply từ cuối lên đầu (tránh offset shift)
+      const sortedHighlights = [...highlights].sort((a, b) => {
+        if (a.positionInfo?.startOffset && b.positionInfo?.startOffset) {
+          return b.positionInfo.startOffset - a.positionInfo.startOffset; // Reverse order
+        }
+        return 0;
+      });
 
-      const style = h.isTemp
-        ? `background: ${h.color}; border-radius: 3px; padding: 0 2px; cursor: pointer; border: 2px dashed #ff9800; animation: pulse-temp 1s ease-in-out infinite alternate;`
-        : `background: ${
-            h.color
-          }; border-radius: 3px; padding: 0 2px; cursor: pointer; ${
-            h.note ? "border-bottom: 1px dashed #888;" : ""
-          } ${h.isVocabulary ? "border-top: 2px solid #2196f3;" : ""}`;
+      console.log(
+        "📊 Sorted highlights:",
+        sortedHighlights.map((h) => ({
+          text: h.text,
+          startOffset: h.positionInfo?.startOffset,
+          isTemp: h.isTemp,
+        }))
+      );
 
-      const span = h.isTemp
-        ? `<span class="highlight-span temp-highlight" style="${style}" title="Selected text - choose a color">$1</span>`
-        : `<span class="highlight-span" data-highlight-index="${permanentHighlights.findIndex(
-            (item) =>
-              item.text === h.text &&
-              item.color === h.color &&
-              item.note === h.note &&
-              item.isVocabulary === h.isVocabulary
-          )}" style="${style}" title="${
-            h.isVocabulary && h.note
-              ? `Vocabulary | Note: ${h.note}`
-              : h.isVocabulary
-              ? "Vocabulary"
-              : h.note || ""
-          }">$1</span>`;
+      sortedHighlights.forEach((h, index) => {
+        const highlightText = h.text.trim();
+        if (!highlightText) return;
 
-      processedContent = processedContent.replace(regex, span);
-    });
+        console.log(`🖍️ Processing highlight ${index}:`, {
+          text: highlightText,
+          positionInfo: h.positionInfo,
+          isTemp: h.isTemp,
+        });
 
-    return processedContent;
-  };
+        // ✅ Use DOM manipulation để highlight chính xác
+        const success = highlightInDOMAtPosition(
+          tempDiv,
+          h,
+          permanentHighlights
+        );
+        console.log(`✅ Highlight ${index} success:`, success);
+      });
 
-  // ✅ DOM-based text highlighting that works across tags - SIMPLIFIED APPROACH
-  const highlightTextInDOM = (
+      return tempDiv.innerHTML;
+    },
+    []
+  ); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ✅ Highlight text tại vị trí cụ thể trong DOM
+  const highlightInDOMAtPosition = (
     container,
-    searchText,
     highlight,
     permanentHighlights
   ) => {
-    // Get the container's text content to see the full picture
-    const containerText = container.textContent || container.innerText;
+    try {
+      const highlightText = highlight.text.trim();
+      let targetStartOffset = -1;
+      let targetEndOffset = -1;
 
-    // Check if the text exists in the container
-    if (!containerText.toLowerCase().includes(searchText.toLowerCase())) {
+      // Get plain text để tính position
+      const plainText = container.textContent || container.innerText || "";
+
+      // ✅ Nếu có position info chính xác
+      if (highlight.positionInfo?.startOffset !== undefined) {
+        const { startOffset, endOffset, contextBefore, contextAfter } =
+          highlight.positionInfo;
+
+        // Verify text tại position có match không
+        const textAtPosition = plainText.substring(
+          startOffset,
+          endOffset || startOffset + highlightText.length
+        );
+
+        console.log("🎯 Position verification:", {
+          startOffset,
+          endOffset,
+          expected: highlightText,
+          actual: textAtPosition,
+          match: textAtPosition.toLowerCase() === highlightText.toLowerCase(),
+        });
+
+        if (textAtPosition.toLowerCase() === highlightText.toLowerCase()) {
+          // Perfect match - use exact position
+          targetStartOffset = startOffset;
+          targetEndOffset = endOffset || startOffset + highlightText.length;
+        } else {
+          // Position không match, tìm bằng context
+          console.log("⚠️ Position mismatch, using context matching");
+          const contextResult = findBestMatchWithContext(
+            plainText,
+            highlightText,
+            contextBefore,
+            contextAfter
+          );
+          if (contextResult) {
+            targetStartOffset = contextResult.startOffset;
+            targetEndOffset = contextResult.endOffset;
+          }
+        }
+      }
+
+      // ✅ Fallback: first occurrence
+      if (targetStartOffset === -1) {
+        console.log("🔄 Using fallback - first occurrence");
+        const foundIndex = plainText
+          .toLowerCase()
+          .indexOf(highlightText.toLowerCase());
+        if (foundIndex !== -1) {
+          targetStartOffset = foundIndex;
+          targetEndOffset = foundIndex + highlightText.length;
+        }
+      }
+
+      if (targetStartOffset === -1) {
+        console.log("❌ No match found for:", highlightText);
+        return false;
+      }
+
+      console.log("🎯 Final target position:", {
+        targetStartOffset,
+        targetEndOffset,
+      });
+
+      // ✅ Apply highlight using TreeWalker
+      return applyHighlightAtOffset(
+        container,
+        targetStartOffset,
+        targetEndOffset,
+        highlight,
+        permanentHighlights
+      );
+    } catch (error) {
+      console.error("Error in highlightInDOMAtPosition:", error);
       return false;
     }
+  };
 
-    // Try to use Range API to find and highlight the text
+  // ✅ Find best match using context
+  const findBestMatchWithContext = (
+    plainText,
+    targetText,
+    contextBefore,
+    contextAfter
+  ) => {
+    const allMatches = [];
+    let searchPos = 0;
+
+    while (true) {
+      const foundIndex = plainText
+        .toLowerCase()
+        .indexOf(targetText.toLowerCase(), searchPos);
+      if (foundIndex === -1) break;
+
+      const beforeText = plainText.substring(
+        Math.max(0, foundIndex - 30),
+        foundIndex
+      );
+      const afterText = plainText.substring(
+        foundIndex + targetText.length,
+        foundIndex + targetText.length + 30
+      );
+
+      let score = 0;
+      if (contextBefore && beforeText.includes(contextBefore.slice(-15)))
+        score += 2;
+      if (contextAfter && afterText.includes(contextAfter.slice(0, 15)))
+        score += 2;
+
+      allMatches.push({
+        startOffset: foundIndex,
+        endOffset: foundIndex + targetText.length,
+        score,
+      });
+      searchPos = foundIndex + 1;
+    }
+
+    if (allMatches.length === 0) return null;
+
+    // Return best match
+    return allMatches.reduce((best, current) =>
+      current.score > best.score ? current : best
+    );
+  };
+
+  // ✅ Apply highlight tại offset cụ thể trong DOM
+  const applyHighlightAtOffset = (
+    container,
+    startOffset,
+    endOffset,
+    highlight,
+    permanentHighlights
+  ) => {
     try {
-      const range = document.createRange();
       const walker = document.createTreeWalker(
         container,
         NodeFilter.SHOW_TEXT,
         {
           acceptNode: function (node) {
             // Skip already highlighted text
-            if (
-              node.parentNode &&
-              node.parentNode.classList &&
-              node.parentNode.classList.contains("highlight-span")
-            ) {
+            if (node.parentNode?.classList?.contains("highlight-span")) {
               return NodeFilter.FILTER_REJECT;
             }
             return NodeFilter.FILTER_ACCEPT;
@@ -666,75 +923,70 @@ export default function PassageHighlighter({ passage, passageKey, subject }) {
         false
       );
 
-      // Collect all text nodes and their cumulative text
+      // Build text node map
       const textNodes = [];
-      let combinedText = "";
+      let currentOffset = 0;
       let node;
 
       while ((node = walker.nextNode())) {
+        const nodeText = node.textContent;
         textNodes.push({
           node: node,
-          text: node.textContent,
-          startIndex: combinedText.length,
-          endIndex: combinedText.length + node.textContent.length,
+          text: nodeText,
+          startOffset: currentOffset,
+          endOffset: currentOffset + nodeText.length,
         });
-        combinedText += node.textContent;
+        currentOffset += nodeText.length;
       }
 
-      // Find the search text in combined text (case insensitive)
-      const searchIndex = combinedText
-        .toLowerCase()
-        .indexOf(searchText.toLowerCase());
-      if (searchIndex === -1) {
-        return false;
-      }
+      // Find nodes containing target range
+      let startNode = null;
+      let endNode = null;
+      let startNodeOffset = 0;
+      let endNodeOffset = 0;
 
-      const searchEndIndex = searchIndex + searchText.length;
-
-      // Find which text nodes contain our search text
-      let startNode = null,
-        endNode = null;
-      let startOffset = 0,
-        endOffset = 0;
-
-      for (const textNodeInfo of textNodes) {
-        // Check if this node contains the start of our search text
+      for (const nodeInfo of textNodes) {
+        // Find start node
         if (
           !startNode &&
-          searchIndex >= textNodeInfo.startIndex &&
-          searchIndex < textNodeInfo.endIndex
+          startOffset >= nodeInfo.startOffset &&
+          startOffset < nodeInfo.endOffset
         ) {
-          startNode = textNodeInfo.node;
-          startOffset = searchIndex - textNodeInfo.startIndex;
+          startNode = nodeInfo.node;
+          startNodeOffset = startOffset - nodeInfo.startOffset;
         }
 
-        // Check if this node contains the end of our search text
+        // Find end node
         if (
-          !endNode &&
-          searchEndIndex > textNodeInfo.startIndex &&
-          searchEndIndex <= textNodeInfo.endIndex
+          endOffset > nodeInfo.startOffset &&
+          endOffset <= nodeInfo.endOffset
         ) {
-          endNode = textNodeInfo.node;
-          endOffset = searchEndIndex - textNodeInfo.startIndex;
+          endNode = nodeInfo.node;
+          endNodeOffset = endOffset - nodeInfo.startOffset;
           break;
         }
       }
 
       if (!startNode || !endNode) {
+        console.log("❌ Could not find nodes for range");
         return false;
       }
 
-      // Create the highlight span
+      // Create highlight span
+      const range = document.createRange();
+      range.setStart(startNode, startNodeOffset);
+      range.setEnd(endNode, endNodeOffset);
+
       const highlightSpan = document.createElement("span");
       highlightSpan.className = highlight.isTemp
         ? "highlight-span temp-highlight"
         : "highlight-span";
 
       const style = highlight.isTemp
-        ? `background: ${highlight.color}; border-radius: 3px; padding: 0 2px; cursor: pointer; border: 2px dashed #ff9800; animation: pulse-temp 1s ease-in-out infinite alternate;`
+        ? `background: ${highlight.color}; border-radius: 3px; cursor: pointer; animation: pulse-temp 1s ease-in-out infinite alternate;`
         : `background: ${
             highlight.color
-          }; border-radius: 3px; padding: 0 2px; cursor: pointer; ${
+          }; border-radius: 3px; cursor: pointer; ${
             highlight.note ? "border-bottom: 1px dashed #888;" : ""
           } ${highlight.isVocabulary ? "border-top: 2px solid #2196f3;" : ""}`;
 
@@ -759,111 +1011,19 @@ export default function PassageHighlighter({ passage, passageKey, subject }) {
             : highlight.note || "";
       }
 
-      // Set the range and extract content
-      range.setStart(startNode, startOffset);
-      range.setEnd(endNode, endOffset);
-
-      // Extract the range contents and wrap in highlight span
+      // Extract and wrap content
       const extractedContent = range.extractContents();
       highlightSpan.appendChild(extractedContent);
       range.insertNode(highlightSpan);
 
+      console.log("✅ Successfully applied highlight at offset:", {
+        startOffset,
+        endOffset,
+      });
       return true;
     } catch (error) {
+      console.error("Error applying highlight at offset:", error);
       return false;
-    }
-  };
-
-  const highlightSimpleText = (
-    container,
-    searchText,
-    highlight,
-    permanentHighlights
-  ) => {
-    const innerHTML = container.innerHTML;
-    const escapedText = searchText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const regex = new RegExp(`(?!<[^>]*)(${escapedText})(?![^<]*>)`, "gi");
-
-    const style = highlight.isTemp
-      ? `background: ${highlight.color}; border-radius: 3px; padding: 0 2px; cursor: pointer; border: 2px dashed #ff9800; animation: pulse-temp 1s ease-in-out infinite alternate;`
-      : `background: ${
-          highlight.color
-        }; border-radius: 3px; padding: 0 2px; cursor: pointer; ${
-          highlight.note ? "border-bottom: 1px dashed #888;" : ""
-        } ${highlight.isVocabulary ? "border-top: 2px solid #2196f3;" : ""}`;
-
-    const span = highlight.isTemp
-      ? `<span class="highlight-span temp-highlight" style="${style}" title="Selected text - choose a color">$1</span>`
-      : `<span class="highlight-span" data-highlight-index="${permanentHighlights.findIndex(
-          (item) =>
-            item.text === highlight.text &&
-            item.color === highlight.color &&
-            item.note === highlight.note &&
-            item.isVocabulary === highlight.isVocabulary
-        )}" style="${style}" title="${
-          highlight.isVocabulary && highlight.note
-            ? `Vocabulary | Note: ${highlight.note}`
-            : highlight.isVocabulary
-            ? "Vocabulary"
-            : highlight.note || ""
-        }">$1</span>`;
-
-    container.innerHTML = innerHTML.replace(regex, span);
-  };
-
-  // ✅ Advanced highlight function that supports cross-tag highlighting
-  const processAdvancedHighlight = (
-    htmlContent,
-    highlights,
-    permanentHighlights
-  ) => {
-    if (!htmlContent || highlights.length === 0) {
-      return htmlContent;
-    }
-
-    try {
-      // Create a temporary DOM element to parse HTML
-      const tempDiv = document.createElement("div");
-      tempDiv.innerHTML = htmlContent;
-
-      // Debug flag should match the one in highlightTextInDOM
-
-      // Process each highlight
-      let successCount = 0;
-      highlights.forEach((highlight, index) => {
-        const highlightText = highlight.text.trim();
-        if (!highlightText) return;
-
-        // Find and highlight text across DOM nodes
-        const success = highlightTextInDOM(
-          tempDiv,
-          highlightText,
-          highlight,
-          permanentHighlights
-        );
-
-        if (success) {
-          successCount++;
-        } else {
-          // Try fallback for this specific highlight
-          highlightSimpleText(
-            tempDiv,
-            highlightText,
-            highlight,
-            permanentHighlights
-          );
-        }
-      });
-
-      return tempDiv.innerHTML;
-    } catch (error) {
-      console.error("Error in advanced highlight processing:", error);
-      // Fallback to original regex method
-      return processSimpleHighlight(
-        htmlContent,
-        highlights,
-        permanentHighlights
-      );
     }
   };
 
@@ -883,8 +1043,8 @@ export default function PassageHighlighter({ passage, passageKey, subject }) {
       (a, b) => b.text.trim().length - a.text.trim().length
     );
 
-    return processAdvancedHighlight(passage, sortedHighlights, highlighted);
-  }, [passage, highlighted, tempHighlight]);
+    return processSmartHighlight(passage, sortedHighlights, highlighted);
+  }, [passage, highlighted, tempHighlight, processSmartHighlight]);
 
   // ✅ Simple fallback highlighting for edge cases
 

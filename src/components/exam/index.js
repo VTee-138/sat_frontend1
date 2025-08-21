@@ -458,6 +458,8 @@ export default function ExamPage() {
     // Reset start time for next exam
     const newStartTime = Date.now();
     localStorage.setItem("exam_start_time", newStartTime.toString());
+    // Clear old exam time to force recalculation
+    localStorage.removeItem("exam_examTime");
 
     // Set exam ID for next exam
     const nextExamId = nextExam.examId || nextExam.id || nextExam._id;
@@ -774,8 +776,36 @@ export default function ExamPage() {
   useEffect(() => {
     if (timeExpired && !isSubmitted && !isSubmitting) {
       handleSubmit();
+
+      if (currentModule === "MODULE 1") {
+        // Show transition (countdown-like) screen to next module instead of immediate jump
+        const nextInfo = getNextSubjectAndModule(
+          currentSubject,
+          currentModule,
+          false
+        );
+        if (nextInfo) {
+          setNextExamInfo({
+            currentSubject,
+            currentModule,
+            nextSubject: nextInfo.subject,
+            nextModule: nextInfo.module,
+            isDifficulty: false,
+          });
+          setShowTransition(true);
+          setTimeExpired(false);
+        }
+      }
     }
-  }, [timeExpired, isSubmitted, isSubmitting, handleSubmit]);
+  }, [
+    timeExpired,
+    isSubmitted,
+    isSubmitting,
+    currentModule,
+    currentSubject,
+    getNextSubjectAndModule,
+    handleSubmit,
+  ]);
 
   // Khôi phục dữ liệu từ localStorage khi component mount (except examTime - handled in decryptedData effect)
   useEffect(() => {
@@ -936,6 +966,9 @@ export default function ExamPage() {
                     passage={stablePassage}
                     passageKey={current}
                     subject={decryptedData?.subject}
+                    currentSubject={currentSubject}
+                    currentModule={currentModule}
+                    examId={currentExamId}
                   />
                   {questions[current]?.imageUrl && (
                     <img

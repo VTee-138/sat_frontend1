@@ -2,7 +2,7 @@ import axios from "axios";
 import { decryptData } from "./decryption";
 import { checkJwtExistsAndExpired } from "../services/AuthService";
 
-const REACT_APP_API_BASE_URL = "https://server.10sat.edu.vn/api/v2";
+const REACT_APP_API_BASE_URL = "https://10sat-server.vercel.app/api/v2";
 // const REACT_APP_API_BASE_URL = "http://localhost:4000/api/v2";
 // const REACT_APP_API_BASE_URL = "http://192.168.1.7:4000/api/v2";
 // const REACT_APP_API_BASE_URL = "https://api.labteam.vn/api/v2";

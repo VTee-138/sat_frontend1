@@ -9,7 +9,7 @@ const VocabularyService = {
     search = null
   ) => {
     try {
-      let url = `/vocabulary?page=${page}&limit=${limit}`;
+      let url = `/vocabulary?page=${page}&limit=all`;
       if (folderId) url += `&folderId=${folderId}`;
       if (search) url += `&search=${encodeURIComponent(search)}`;
 

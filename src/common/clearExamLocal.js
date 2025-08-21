@@ -6,7 +6,7 @@ export function clearExamLocalStorage(preserveSubjectModule = false) {
   Object.keys(localStorage).forEach((key) => {
     if (
       (key.startsWith("exam_") ||
-        key.startsWith("highlighted_passage_") ||
+        key.startsWith("highlighted_") ||
         key.startsWith("rejected_options_")) &&
       !keysToPreserve.includes(key)
     ) {

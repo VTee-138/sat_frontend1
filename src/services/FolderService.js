@@ -3,7 +3,7 @@ import { apiClient, del, get, post, put } from "../common/apiClient";
 const FolderService = {
   // Lấy danh sách thư mục
   getFolders: async (page = 1, limit = 20) => {
-    return await get(`/folder?page=${page}&limit=${limit}`);
+    return await get(`/folder?page=${page}&limit=all`);
   },
 
   // Lấy thông tin chi tiết thư mục

@@ -107,7 +107,7 @@ export default function QuestionNavModal({
               }}
             />
             <Typography fontSize={{ xs: 13, sm: 16 }}>
-              {t("exam.unanswered")}
+              {t("exam.notAnswered")}
             </Typography>
           </Box>
           {/* Answered */}
